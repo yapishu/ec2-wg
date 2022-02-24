@@ -1,0 +1,97 @@
+#!/bin/bash
+###############################################################################
+#
+# WireGuard autosetup
+#
+# Create users certs and configs from a list (users.txt)
+#
+# Requires: qrencode, wireguard, template client config
+#
+# Runs in /etc/wireguard
+#
+#
+###############################################################################
+#
+#
+# Create local environment if absent
+mkdir -p /etc/wireguard/certs
+mkdir -p /etc/wireguard/conf
+mkdir -p /etc/wireguard/qr
+
+# Generate keys for initial user
+umask 077; wg genkey | tee /etc/wireguard/certs/root\_private | wg pubkey > \
+        /etc/wireguard/certs/root\_public
+ROOTPUB=`cat /etc/wireguard/certs/root_public`
+INTERFACE="wg0"
+sed -i "s|REPLACE|${ROOTPUB}|g" /etc/wireguard/${INTERFACE}.conf
+
+wg-quick up wg0
+DATE=`date +%D | sed -e "s/\//./g"`
+
+# Create array of users and generate keys in /certs
+mapfile -t users < /etc/wireguard/users.txt
+
+for PREFIX in "${users[@]}"
+do
+#####
+##########
+###############
+CLIENT="${PREFIX}"
+umask 077; wg genkey | tee /etc/wireguard/certs/${CLIENT}\_private | wg pubkey > \
+        /etc/wireguard/certs/${CLIENT}\_public
+echo Keys generated for ${CLIENT}.
+echo Generating interface configuration...
+
+# Extract config variables
+PRIVKEY=`cat /etc/wireguard/certs/${CLIENT}\_private`
+PUBKEY=`cat /etc/wireguard/certs/${CLIENT}\_public`
+# Find the IP of the last client
+LASTIP=`tail -n 1 /etc/wireguard/${INTERFACE}.conf | awk '{print $3}' | awk -F. '{print $4}' \
+        | awk -F'/' '{print $1}'`
+if [ "$LASTIP" -ge "256" ]; then
+        echo You have run out of /24 addresses. Exiting.
+        exit 1
+fi
+# Incremented /32
+IPVAR=$((LASTIP+1))
+# New IP strings for configs
+NEWIP_SERVER=`tail -n 1 /etc/wireguard/${INTERFACE}.conf | awk '{print $3}' \
+        | awk -F. -v OFS=. -v r=${IPVAR}/32 '{$4=r}1'`
+NEWIP_CLIENT=`tail -n 1 /etc/wireguard/${INTERFACE}.conf | awk '{print $3}' \
+        | awk -F. -v OFS=. -v r=${IPVAR}/24 '{$4=r}1'`
+
+
+# Generate .conf for client
+echo Generating client configuration...
+cp /etc/wireguard/template /etc/wireguard/conf/${CLIENT}.${DATE}.conf
+echo Replacing name with ${CLIENT}
+sed -i "s|name|$CLIENT|g" /etc/wireguard/conf/${CLIENT}.${DATE}.conf
+echo Replacing privkey with $PRIVKEY
+sed -i "s|privkey|$PRIVKEY|g" /etc/wireguard/conf/${CLIENT}.${DATE}.conf
+echo Replacing IP with $NEWIP_CLIENT
+sed -i "s|clientip|$NEWIP_CLIENT|g" /etc/wireguard/conf/${CLIENT}.${DATE}.conf
+qrencode -t ansiutf8 < /etc/wireguard/conf/${CLIENT}.${DATE}.conf > /etc/wireguard/qr/${CLIENT}.${DATE}.qr
+
+sudo cat <<EOF   >> /etc/wireguard/${INTERFACE}.conf
+
+# ${CLIENT}
+[Peer]
+PublicKey = ${PUBKEY}
+AllowedIPs = ${NEWIP_SERVER}
+EOF
+
+echo ${CLIENT} complete
+echo =======
+######
+####
+##
+done
+
+chmod 600 /etc/wireguard/${INTERFACE}.conf
+echo
+echo Reloading interface...
+wg syncconf ${INTERFACE} <(wg-quick strip ${INTERFACE})
+
+sudo systemctl enable wg-quick@wg0
+firewall-cmd --zone=public --permanent --add-port=41194/udp
+firewall-cmd --reload

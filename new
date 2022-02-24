@@ -1,0 +1,82 @@
+#!/bin/bash
+###############################################################################
+#
+# WireGuard autosetup
+#
+# This script will generate the requisite keys for a device.
+# It will automatically generate a .conf and append it to the network config
+# for the wg interface and restart the service, as well as generate a .conf for
+# the client & print a QR code.
+# This script assumes 1 wg interface and 1 /24 subnet but will auto-detect
+# both. Client configuration files are generated in the conf/ dir and QR codes
+# are saved in qr/.
+#
+# Requires: qrencode, wireguard, template client config
+#
+# Runs in /etc/wireguard
+#
+#
+###############################################################################
+#
+#
+# Create local environment if absent
+mkdir -p certs
+mkdir -p conf
+mkdir -p qr
+DATE=`date +%D | sed -e "s/\//./g"`
+INTERFACE=`wg show interfaces`
+
+# Create user headlessly
+PREFIX=$1
+
+#####
+##########
+###############
+CLIENT="${PREFIX}"
+umask 077; wg genkey | tee certs/${CLIENT}\_private | wg pubkey > \
+        certs/${CLIENT}\_public
+echo Keys generated for ${CLIENT}.
+echo Generating interface configuration...
+
+# Extract config variables
+PRIVKEY=`cat certs/${CLIENT}\_private`
+PUBKEY=`cat certs/${CLIENT}\_public`
+# Find the IP of the last client
+LASTIP=`tail -n 1 ${INTERFACE}.conf | awk '{print $3}' | awk -F. '{print $4}' \
+        | awk -F'/' '{print $1}'`
+if [ "$LASTIP" -ge "256" ]; then
+        echo You have run out of /24 addresses. Exiting.
+        exit 1
+fi
+# Incremented /32
+IPVAR=$((LASTIP+1))
+# New IP strings for configs
+NEWIP_SERVER=`tail -n 1 ${INTERFACE}.conf | awk '{print $3}' \
+        | awk -F. -v OFS=. -v r=${IPVAR}/32 '{$4=r}1'`
+NEWIP_CLIENT=`tail -n 1 ${INTERFACE}.conf | awk '{print $3}' \
+        | awk -F. -v OFS=. -v r=${IPVAR}/24 '{$4=r}1'`
+
+# Print new peer entry to interface config
+printf "\n\n# ${CLIENT}\n[Peer]\nPublicKey = ${PUBKEY}\nAllowedIPs = \
+${NEWIP_SERVER}" >> ${INTERFACE}.conf
+
+# Generate .conf for client
+echo Generating client configuration...
+cp template conf/${CLIENT}.${DATE}.conf
+echo Replacing name with ${CLIENT}
+sed -i "s|name|$CLIENT|g" conf/${CLIENT}.${DATE}.conf
+echo Replacing privkey with $PRIVKEY
+sed -i "s|privkey|$PRIVKEY|g" conf/${CLIENT}.${DATE}.conf
+echo Replacing IP with $NEWIP_CLIENT
+sed -i "s|clientip|$NEWIP_CLIENT|g" conf/${CLIENT}.${DATE}.conf
+qrencode -t ansiutf8 < conf/${CLIENT}.${DATE}.conf > qr/${CLIENT}.${DATE}.qr
+echo ${CLIENT} complete
+echo =======
+######
+####
+##
+
+echo
+echo Reloading interface...
+wg-quick down ${INTERFACE}
+wg-quick up ${INTERFACE}
