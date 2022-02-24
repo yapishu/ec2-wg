@@ -2,7 +2,7 @@
 
 ### Summary 
 
-Set up a Wireguard server automatically on an EC2 instance.
+Set up a Wireguard server automatically on an Amazon Linux 2 instance.
 
 This script will install Wireguard on a server and create an initial interface configuration, then generate user certificates and configurations for each line in the `users.txt` file. It will automatically generate a .conf and append it to the network config for the wg interface and restart the service, as well as generate a .conf for the client & print a QR code.
 
