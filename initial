@@ -74,7 +74,7 @@ qrencode -t ansiutf8 < /etc/wireguard/conf/${CLIENT}.${DATE}.conf > /etc/wiregua
 
 sudo cat <<EOF   >> /etc/wireguard/${INTERFACE}.conf
 
-# ${CLIENT}
+\# ${CLIENT}
 [Peer]
 PublicKey = ${PUBKEY}
 AllowedIPs = ${NEWIP_SERVER}

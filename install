@@ -31,4 +31,4 @@ sudo sed -i "s|pubkey|${PUBKEY}|g" /etc/wireguard/template
 sudo sed -i "s|serverip|${SERVERIP}|g" /etc/wireguard/template
 
 sudo cd /etc/wireguard
-sudo /bin/bash -x /etc/wireguard/initial "$1"
+sudo /bin/bash -x /etc/wireguard/initial
