@@ -14,6 +14,7 @@ wg genkey | sudo tee /etc/wireguard/privatekey | wg pubkey | sudo tee /etc/wireg
 PRIVKEY=`sudo cat /etc/wireguard/privatekey`
 PUBKEY=`sudo cat /etc/wireguard/publickey`
 SERVERIP=`curl ifconfig.me`
+NAMESERVER=`cat /etc/resolv.conf|grep nameserver|cut -d " " -f 2`
 
 sudo cp /home/ec2-user/wg-generator/wg_conf /etc/wireguard/wg0.conf
 sudo sed -i "s|PRIVKEY|${PRIVKEY}|g" /etc/wireguard/wg0.conf
@@ -29,6 +30,7 @@ sudo cp /home/ec2-user/wg-generator/template /etc/wireguard
 sudo cp /home/ec2-user/wg-generator/users.txt /etc/wireguard
 sudo sed -i "s|pubkey|${PUBKEY}|g" /etc/wireguard/template
 sudo sed -i "s|serverip|${SERVERIP}|g" /etc/wireguard/template
+sudo sed -i "s|nameserver|${NAMESERVER}|g" /etc/wireguard/template
 
 sudo cd /etc/wireguard
 sudo /bin/bash -x /etc/wireguard/initial
